@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Tracker Dashboard</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+    <header>
+        <h1>GPS Tracker Dashboard</h1>
+        <div id="status">Loading...</div>
+    </header>
+
+    <main>
+        <div id="map"></div>
+        <div id="deviceList"></div>
+    </main>
+
+    <footer>
+        <div id="info">
+            <div><strong>Devices:</strong> <span id="deviceCount">0</span></div>
+            <div><strong>Last update:</strong> <span id="lastUpdate">--</span></div>
+        </div>
+        <div id="controls">
+            <button id="refreshBtn">Refresh Now</button>
+            <button id="centerBtn">Center on All</button>
+        </div>
+    </footer>
+
+    <script src="js/dashboard.js"></script>
+</body>
+</html>

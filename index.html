@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Tracker</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+    <header>
+        <h1>GPS Tracker</h1>
+        <div id="status">Idle</div>
+    </header>
+
+    <main>
+        <div id="map"></div>
+    </main>
+
+    <footer>
+        <div id="info">
+            <div><strong>Lat:</strong> <span id="lat">--</span></div>
+            <div><strong>Lng:</strong> <span id="lng">--</span></div>
+            <div><strong>Accuracy:</strong> <span id="accuracy">--</span> m</div>
+            <div><strong>Speed:</strong> <span id="speed">--</span> km/h</div>
+            <div><strong>Distance:</strong> <span id="distance">0</span> m</div>
+        </div>
+        <div id="controls">
+            <button id="startBtn">Start Tracking</button>
+            <button id="clearBtn">Clear Path</button>
+            <button id="centerBtn">Center on Me</button>
+        </div>
+    </footer>
+
+    <script src="js/app.js"></script>
+</body>
+</html>

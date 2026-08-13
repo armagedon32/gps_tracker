@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Device Sender</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a2a3a;
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .card {
+            background: #22364a;
+            border-radius: 12px;
+            padding: 24px;
+            width: 100%;
+            max-width: 420px;
+            box-shadow: 0 8px 24px rgba(0,0,0,.3);
+        }
+        h1 { font-size: 1.3rem; margin-bottom: 16px; text-align: center; }
+        label { display: block; font-size: .85rem; margin: 12px 0 4px; color: #aab7c4; }
+        input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #3d5872;
+            border-radius: 8px;
+            background: #1a2a3a;
+            color: #fff;
+            font-size: 1rem;
+        }
+        input:focus { outline: none; border-color: #3498db; }
+        button {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            background: #3498db;
+            color: #fff;
+            font-size: 1rem;
+            cursor: pointer;
+            margin-top: 16px;
+            transition: background .2s;
+        }
+        button:hover { background: #2980b9; }
+        #sendBtn.active { background: #e74c3c; }
+        #status {
+            margin-top: 16px;
+            text-align: center;
+            font-size: .9rem;
+            color: #aab7c4;
+            min-height: 1.2em;
+        }
+        #status.ok { color: #2ecc71; }
+        #status.err { color: #e74c3c; }
+        .live {
+            display: flex;
+            justify-content: space-between;
+            font-size: .85rem;
+            margin-top: 8px;
+            color: #8fa3b5;
+        }
+        .live b { color: #fff; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>GPS Device Sender</h1>
+        <label>Pangalan ng device / sasakyan</label>
+        <input type="text" id="deviceName" placeholder="Hal. Tricycle #1, Kanang phone ng nanay">
+        <button id="sendBtn">Start Sending</button>
+        <div id="status">Kalagayan: Handa</div>
+        <div class="live">
+            <span>Lat <b id="lat">--</b></span>
+            <span>Lng <b id="lng">--</b></span>
+        </div>
+        <div class="live">
+            <span>Accuracy <b id="acc">--</b> m</span>
+            <span>Speed <b id="speed">--</b> km/h</span>
+        </div>
+    </div>
+
+    <script>
+        const nameInput = document.getElementById('deviceName');
+        const sendBtn = document.getElementById('sendBtn');
+        const statusEl = document.getElementById('status');
+        const latEl = document.getElementById('lat');
+        const lngEl = document.getElementById('lng');
+        const accEl = document.getElementById('acc');
+        const speedEl = document.getElementById('speed');
+
+        let watchId = null;
+        let started = false;
+        let deviceId = '';
+
+        function setStatus(msg, cls = '') {
+            statusEl.textContent = msg;
+            statusEl.className = cls;
+        }
+
+        let lastLat = null, lastLng = null;
+
+        async function send(lat, lng, accuracy, speed) {
+            const body = {
+                device_id: deviceId,
+                name: nameInput.value.trim(),
+                lat,
+                lng,
+                accuracy,
+                speed
+            };
+            try {
+                const res = await fetch('/api/location', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                if (!res.ok) {
+                    setStatus('Hindi ma-send sa server. Siguraduhing bukas ang server.', 'err');
+                } else {
+                    setStatus('Sent OK', 'ok');
+                }
+            } catch (e) {
+                setStatus('Walang server connection (' + e.message + ')', 'err');
+            }
+        }
+
+        function onPosition(pos) {
+            const { latitude, longitude, accuracy, speed } = pos.coords;
+            latEl.textContent = latitude.toFixed(6);
+            lngEl.textContent = longitude.toFixed(6);
+            accEl.textContent = accuracy.toFixed(0);
+            speedEl.textContent = speed > 0 ? (speed * 3.6).toFixed(1) : '0.0';
+            send(latitude, longitude, accuracy, speed);
+        }
+
+        function onError(err) {
+            setStatus('Error sa GPS: ' + err.message, 'err');
+        }
+
+        async function toggle() {
+            if (!started) {
+                if (!navigator.geolocation) {
+                    setStatus('Hindi sinusuportahan ng browser ang geolocation.', 'err');
+                    return;
+                }
+                deviceId = (Math.random().toString(36).slice(2, 8)).toUpperCase();
+                sendBtn.textContent = 'Stop Sending';
+                sendBtn.classList.add('active');
+                setStatus('Naghahanap ng lokasyon...');
+                watchId = navigator.geolocation.watchPosition(onPosition, onError, {
+                    enableHighAccuracy: true,
+                    maximumAge: 5000,
+                    timeout: 10000
+                });
+                const d = new Date();
+                const dId = 'D' + d.getFullYear().toString().slice(2) + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0') + '-' + String(Math.floor(Math.random() * 9000) + 1000);
+                deviceId = dId;
+                started = true;
+            } else {
+                navigator.geolocation.clearWatch(watchId);
+                started = false;
+                sendBtn.textContent = 'Start Sending';
+                sendBtn.classList.remove('active');
+                setStatus('Tumigil. Device ID: ' + deviceId, 'ok');
+            }
+        }
+
+        sendBtn.addEventListener('click', toggle);
+    </script>
+</body>
+</html>
