@@ -241,6 +241,8 @@ searchBox.addEventListener('keydown', e => {
     if (e.key === 'Enter') searchLocation(searchBox.value);
 });
 
+initMap();
+
 map.on('click', e => {
     reverseGeocode(e.latlng.lat, e.latlng.lng).then(addr => {
         statusEl.textContent = addr;
@@ -248,7 +250,5 @@ map.on('click', e => {
         statusEl.classList.add('active');
     });
 });
-
-initMap();
 refresh();
 setInterval(refresh, 5000);
