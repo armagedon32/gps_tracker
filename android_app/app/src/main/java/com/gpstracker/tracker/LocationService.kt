@@ -40,9 +40,22 @@ class LocationService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private val prefs by lazy { getSharedPreferences("gps_tracker", Context.MODE_PRIVATE) }
 
+    private var bestLat = 0.0
+    private var bestLng = 0.0
+    private var bestAcc = Float.MAX_VALUE
+    private var hasFix = false
+
     private val listener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
-            sendLocation(location, prefs.getString("device_name", "") ?: "")
+            val acc = location.accuracy
+            // Tanggapin lang ang mahusay na fix; i-send kapag mas mahusay kaysa sa kasalukuyan
+            if (!hasFix || acc <= bestAcc) {
+                bestLat = location.latitude
+                bestLng = location.longitude
+                bestAcc = acc
+                hasFix = true
+                sendLocation(location, prefs.getString("device_name", "") ?: "")
+            }
         }
 
         @Deprecated("Deprecated in Java")
@@ -101,20 +114,28 @@ class LocationService : Service() {
             return
         }
         try {
-            val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
-            var started = false
-            for (p in providers) {
-                if (locationManager.isProviderEnabled(p)) {
-                    locationManager.requestLocationUpdates(p, 2000L, 0f, listener, Looper.getMainLooper())
-                    started = true
-                }
+// GPS muna; ang network ay backup lang kung walang GPS lock
+        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+        var started = false
+        for (p in providers) {
+            if (locationManager.isProviderEnabled(p)) {
+                val minTime = if (p == LocationManager.GPS_PROVIDER) 2000L else 10000L
+                locationManager.requestLocationUpdates(p, minTime, 0f, listener, Looper.getMainLooper())
+                started = true
             }
-            if (!started) {
-                // walang provider; use last known
-                val last = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-                    ?: locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-                if (last != null) sendLocation(last, prefs.getString("device_name", "") ?: "")
+        }
+        if (!started) {
+            // walang provider; use last known (best accuracy)
+            val last = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                ?: locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+            if (last != null && (!hasFix || last.accuracy <= bestAcc)) {
+                bestLat = last.latitude
+                bestLng = last.longitude
+                bestAcc = last.accuracy
+                hasFix = true
+                sendLocation(last, prefs.getString("device_name", "") ?: "")
             }
+        }
         } catch (e: Exception) {
             // ignore
         }
@@ -122,25 +143,19 @@ class LocationService : Service() {
 
     private val sendRunnable = object : Runnable {
         override fun run() {
-            // kumuha ng last known at i-send kahit walang bagong update
-            val latest = currentBestLocation()
-            if (latest != null) {
-                sendLocation(latest, prefs.getString("device_name", "") ?: "")
-            }
+            // i-send ang pinakamahusay na fix kahit walang bagong update
+            sendBestLocation()
             handler.postDelayed(this, SEND_INTERVAL_MS)
         }
     }
 
-    private fun currentBestLocation(): Location? {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-            != PackageManager.PERMISSION_GRANTED
-        ) return null
-        return try {
-            locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-                ?: locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-        } catch (e: Exception) {
-            null
-        }
+    private fun sendBestLocation() {
+        if (!hasFix) return
+        val loc = Location(LocationManager.GPS_PROVIDER)
+        loc.latitude = bestLat
+        loc.longitude = bestLng
+        loc.accuracy = bestAcc
+        sendLocation(loc, prefs.getString("device_name", "") ?: "")
     }
 
     private fun sendLocation(location: Location, name: String) {
