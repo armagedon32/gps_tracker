@@ -65,17 +65,17 @@ async function reverseGeocode(lat, lng) {
     const key = lat.toFixed(4) + ',' + lng.toFixed(4);
     if (addrCache[key]) return addrCache[key];
     try {
-        const url = 'https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1&lat=' + lat + '&lon=' + lng;
-        const res = await fetch(url, { headers: { 'Accept-Language': 'fil-PH,en' } });
+        const url = 'https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/reverseGeocode?f=json&langCode=ph&location=' + lng + ',' + lat;
+        const res = await fetch(url);
         const data = await res.json();
-        const a = data.address || {};
-        const parts = [];
-        if (a.road) parts.push(a.road + (a.house_number ? ' ' + a.house_number : ''));
-        if (a.neighbourhood) parts.push(a.neighbourhood);
-        if (a.suburb || a.village || a.town || a.city) parts.push(a.suburb || a.village || a.town || a.city);
-        if (a.state) parts.push(a.state);
-        if (a.postcode) parts.push(a.postcode);
-        const addr = parts.filter(Boolean).join(', ') || (data.display_name && data.display_name.split(',').slice(0, 3).join(',')) || 'Address not found';
+        let addr = '';
+        if (data.address && data.address.Match_addr) {
+            addr = data.address.Match_addr;
+            if (data.address.City) addr += ', ' + data.address.City;
+            if (data.address.Region) addr += ', ' + data.address.Region;
+            if (data.address.Postal) addr += ', ' + data.address.Postal;
+        }
+        if (!addr) addr = 'Address not found';
         addrCache[key] = addr;
         return addr;
     } catch (e) {
