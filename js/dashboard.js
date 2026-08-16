@@ -84,8 +84,16 @@ async function reverseGeocode(lat, lng) {
 }
 
 function showDetail(d) {
+    const acc = accTxt(d.accuracy);
     ddNameEl.textContent = d.name + ' (' + d.device_id + ')';
     ddCoordsEl.textContent = 'Lat: ' + d.lat.toFixed(6) + '  |  Lng: ' + d.lng.toFixed(6);
+    const ddAccEl = document.getElementById('ddAcc');
+    if (ddAccEl) {
+        ddAccEl.innerHTML = '<i>Kalidad ng lokasyon:</i> ' + accBadge(acc) +
+            (acc.type === 'network' ? ' <span class="accnote">(network/wifi — mag-ingat, malaking error)</span>' :
+             acc.type === 'fair' ? ' <span class="accnote">(medyo maikli — mag-expect ng ilang bahay na error)</span>' :
+             ' <span class="accnote">(GPS - sapat ang tumpak)</span>');
+    }
     ddAddrEl.textContent = 'Tinitignan ang address...';
     deviceDetailEl.style.display = 'block';
     reverseGeocode(d.lat, d.lng).then(addr => {
@@ -106,30 +114,48 @@ function ageText(ms) {
     return Math.floor(m / 60) + 'h ago';
 }
 
+function accTxt(acc) {
+    if (acc == null || isNaN(acc)) return { txt: '?', type: 'unknown' };
+    const a = Math.round(acc);
+    if (a <= 20) return { txt: a + 'm', type: 'gps' };
+    if (a <= 100) return { txt: a + 'm', type: 'fair' };
+    return { txt: a + 'm', type: 'network' };
+}
+
+function accBadge(label) {
+    const tag = document.createElement('span');
+    tag.dataset.accType = label.type;
+    tag.textContent = '±' + label.txt;
+    return tag.outerHTML;
+}
+
 function updateDevice(d, idx) {
     const c = colorFor(d.device_id, idx);
     const coordTxt = 'Lat: ' + d.lat.toFixed(6) + ' | Lng: ' + d.lng.toFixed(6);
+    const acc = accTxt(d.accuracy);
+    const accHtml = accBadge(acc);
+    const statusTxt = d.last_status || '';
 
     if (!markers[d.device_id]) {
         markers[d.device_id] = L.marker([d.lat, d.lng], {
             title: d.name,
             icon: L.divIcon({
-                html: `<div style="width:14px;height:14px;border-radius:50%;background:${c};border:3px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.4);"></div>`,
+                html: `<div style="width:14px;height:14px;border-radius:50%;background:${c};border:3px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.4);" title="±${acc.txt} accuracy"></div>`,
                 className: ''
             })
         }).addTo(map);
-        markers[d.device_id].bindPopup(`<b>${esc(d.name)}</b><br><span style="font-size:.8rem;color:#555">${coordTxt}</span><br>Last update: ${ageText(d.age)}`);
+        markers[d.device_id].bindPopup(`<b>${esc(d.name)}</b><br><span style="font-size:.8rem;color:#555">${coordTxt}</span><br>Accuracy: ${accHtml}<br>${statusTxt}<br>Last update: ${ageText(d.age)}`);
         markers[d.device_id].on('click', () => {
             showDetail(d);
             reverseGeocode(d.lat, d.lng).then(addr => {
-                markers[d.device_id].setPopupContent(`<b>${esc(d.name)}</b><br><span style="font-size:.8rem;color:#555">${coordTxt}</span><br>${esc(addr)}<br>Last update: ${ageText(d.age)}`);
+                markers[d.device_id].setPopupContent(`<b>${esc(d.name)}</b><br><span style="font-size:.8rem;color:#555">${coordTxt}</span><br>Accuracy: ${accHtml}<br>${esc(addr)}<br>${statusTxt}<br>Last update: ${ageText(d.age)}`);
             });
         });
     } else {
         markers[d.device_id].setLatLng([d.lat, d.lng]);
         const cur = markers[d.device_id].getPopup().getContent();
-        if (cur.indexOf(coordTxt) < 0) {
-            markers[d.device_id].setPopupContent(`<b>${esc(d.name)}</b><br><span style="font-size:.8rem;color:#555">${coordTxt}</span><br>Last update: ${ageText(d.age)}`);
+        if (cur.indexOf(coordTxt) < 0 || cur.indexOf('Accuracy') < 0) {
+            markers[d.device_id].setPopupContent(`<b>${esc(d.name)}</b><br><span style="font-size:.8rem;color:#555">${coordTxt}</span><br>Accuracy: ${accHtml}<br>${statusTxt}<br>Last update: ${ageText(d.age)}`);
         }
     }
 
@@ -150,10 +176,12 @@ function renderList(devices) {
     deviceListEl.innerHTML = '<h3>Devices</h3>';
     devices.forEach((d, idx) => {
         const c = COLORS[idx % COLORS.length];
+        const acc = accTxt(d.accuracy);
         const dd = document.createElement('div');
         dd.className = 'devitem';
         dd.innerHTML = `<span class="dot" style="background:${c}"></span>
             <button class="focusBtn" data-id="${esc(d.device_id)}">${esc(d.name)}</button>
+            <span class="accbadge-${acc.type}">±${acc.txt}</span>
             <span>${ageText(d.age)}</span>`;
         dd.querySelector('.focusBtn').addEventListener('click', () => {
             map.setView([d.lat, d.lng], 19);
