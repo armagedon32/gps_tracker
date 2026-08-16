@@ -3,3 +3,11 @@ deploy.zip
 __pycache__/
 *.pyc
 .env
+
+# Android build artifacts
+android_app/.gradle/
+android_app/**/build/
+android_app/local.properties
+android_app/.kotlin/
+*.apk
+!android_app/app/src/main/res/**/*.png

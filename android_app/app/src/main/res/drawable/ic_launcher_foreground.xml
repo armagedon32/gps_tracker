@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- GPS pin: puting marker na may asul na loob -->
+    <group>
+        <!-- pin head -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M54,26
+                C43.0,26 34,35 34,46
+                C34,60 54,82 54,82
+                C54,82 74,60 74,46
+                C74,35 65.0,26 54,26 Z" />
+        <!-- inner circle -->
+        <path
+            android:fillColor="#3498DB"
+            android:pathData="M54,40
+                C48,40 43,45 43,51
+                C43,57 48,62 54,62
+                C60,62 65,57 65,51
+                C65,45 60,40 54,40 Z" />
+    </group>
+</vector>
