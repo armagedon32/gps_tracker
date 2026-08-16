@@ -6,6 +6,16 @@ from flask import Flask, request, jsonify, send_from_directory
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__)
 
+CORS_ORIGIN = os.environ.get("CORS_ORIGIN", "*")
+
+
+@app.after_request
+def add_cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = CORS_ORIGIN
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    return response
+
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "data"))
 DATA_FILE = os.path.join(DATA_DIR, "locations.json")
 os.makedirs(DATA_DIR, exist_ok=True)

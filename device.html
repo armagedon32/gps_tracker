@@ -95,6 +95,12 @@
         const accEl = document.getElementById('acc');
         const speedEl = document.getElementById('speed');
 
+        // API endpoint. Sa GitHub Pages, gamitin ang buong URL ng server.
+        const API_BASE = window.location.hostname.toLowerCase().includes('github.io')
+            ? 'https://gpstracker.vibenest.net'
+            : '';
+        const API_URL = API_BASE + '/api/location';
+
         let watchId = null;
         let started = false;
         let deviceId = '';
@@ -116,7 +122,7 @@
                 speed
             };
             try {
-                const res = await fetch('/api/location', {
+                const res = await fetch(API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
