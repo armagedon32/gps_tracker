@@ -11,11 +11,20 @@
 <body>
     <header>
         <h1>GPS Tracker Dashboard</h1>
+        <div id="searchWrap">
+            <input id="searchBox" type="text" placeholder="Mag-search ng lugar / address...">
+        </div>
         <div id="status">Loading...</div>
     </header>
 
     <main>
         <div id="map"></div>
+        <div id="deviceDetail">
+            <button class="close" onclick="document.getElementById('deviceDetail').style.display='none'">&times;</button>
+            <strong id="ddName">--</strong><br>
+            <div class="addr" id="ddAddr">Loading address...</div>
+            <div class="coords" id="ddCoords">--</div>
+        </div>
         <div id="deviceList"></div>
     </main>
 

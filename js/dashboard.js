@@ -4,6 +4,11 @@ const lastUpdateEl = document.getElementById('lastUpdate');
 const refreshBtn = document.getElementById('refreshBtn');
 const centerBtn = document.getElementById('centerBtn');
 const deviceListEl = document.getElementById('deviceList');
+const searchBox = document.getElementById('searchBox');
+const ddNameEl = document.getElementById('ddName');
+const ddAddrEl = document.getElementById('ddAddr');
+const ddCoordsEl = document.getElementById('ddCoords');
+const deviceDetailEl = document.getElementById('deviceDetail');
 
 const COLORS = ['#3498db', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#e67e22', '#1abc9c', '#c0392b'];
 
@@ -11,6 +16,7 @@ let map = null;
 const markers = {};      // device_id -> marker
 const paths = {};        // device_id -> polyline
 const allPoints = {};    // device_id -> [[lat,lng],...]
+const addrCache = {};
 
 function initMap() {
     map = L.map('map', {
@@ -55,6 +61,38 @@ function initMap() {
     }, null, { position: 'topleft' }).addTo(map);
 }
 
+async function reverseGeocode(lat, lng) {
+    const key = lat.toFixed(4) + ',' + lng.toFixed(4);
+    if (addrCache[key]) return addrCache[key];
+    try {
+        const url = 'https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1&lat=' + lat + '&lon=' + lng;
+        const res = await fetch(url, { headers: { 'Accept-Language': 'fil-PH,en' } });
+        const data = await res.json();
+        const a = data.address || {};
+        const parts = [];
+        if (a.road) parts.push(a.road + (a.house_number ? ' ' + a.house_number : ''));
+        if (a.neighbourhood) parts.push(a.neighbourhood);
+        if (a.suburb || a.village || a.town || a.city) parts.push(a.suburb || a.village || a.town || a.city);
+        if (a.state) parts.push(a.state);
+        if (a.postcode) parts.push(a.postcode);
+        const addr = parts.filter(Boolean).join(', ') || (data.display_name && data.display_name.split(',').slice(0, 3).join(',')) || 'Address not found';
+        addrCache[key] = addr;
+        return addr;
+    } catch (e) {
+        return 'Address not found';
+    }
+}
+
+function showDetail(d) {
+    ddNameEl.textContent = d.name + ' (' + d.device_id + ')';
+    ddCoordsEl.textContent = 'Lat: ' + d.lat.toFixed(6) + '  |  Lng: ' + d.lng.toFixed(6);
+    ddAddrEl.textContent = 'Tinitignan ang address...';
+    deviceDetailEl.style.display = 'block';
+    reverseGeocode(d.lat, d.lng).then(addr => {
+        ddAddrEl.textContent = addr;
+    });
+}
+
 function colorFor(id, idx) {
     return COLORS[idx % COLORS.length];
 }
@@ -70,6 +108,7 @@ function ageText(ms) {
 
 function updateDevice(d, idx) {
     const c = colorFor(d.device_id, idx);
+    const coordTxt = 'Lat: ' + d.lat.toFixed(6) + ' | Lng: ' + d.lng.toFixed(6);
 
     if (!markers[d.device_id]) {
         markers[d.device_id] = L.marker([d.lat, d.lng], {
@@ -79,10 +118,19 @@ function updateDevice(d, idx) {
                 className: ''
             })
         }).addTo(map);
-        markers[d.device_id].bindPopup(`<b>${esc(d.name)}</b><br>Last update: ${ageText(d.age)}`);
+        markers[d.device_id].bindPopup(`<b>${esc(d.name)}</b><br><span style="font-size:.8rem;color:#555">${coordTxt}</span><br>Last update: ${ageText(d.age)}`);
+        markers[d.device_id].on('click', () => {
+            showDetail(d);
+            reverseGeocode(d.lat, d.lng).then(addr => {
+                markers[d.device_id].setPopupContent(`<b>${esc(d.name)}</b><br><span style="font-size:.8rem;color:#555">${coordTxt}</span><br>${esc(addr)}<br>Last update: ${ageText(d.age)}`);
+            });
+        });
     } else {
         markers[d.device_id].setLatLng([d.lat, d.lng]);
-        markers[d.device_id].setPopupContent(`<b>${esc(d.name)}</b><br>Last update: ${ageText(d.age)}`);
+        const cur = markers[d.device_id].getPopup().getContent();
+        if (cur.indexOf(coordTxt) < 0) {
+            markers[d.device_id].setPopupContent(`<b>${esc(d.name)}</b><br><span style="font-size:.8rem;color:#555">${coordTxt}</span><br>Last update: ${ageText(d.age)}`);
+        }
     }
 
     if (!paths[d.device_id]) {
@@ -109,6 +157,7 @@ function renderList(devices) {
             <span>${ageText(d.age)}</span>`;
         dd.querySelector('.focusBtn').addEventListener('click', () => {
             map.setView([d.lat, d.lng], 19);
+            showDetail(d);
         });
         deviceListEl.appendChild(dd);
     });
@@ -160,6 +209,44 @@ centerBtn.addEventListener('click', () => {
     if (!ids.length) return;
     const latlngs = ids.map(id => markers[id].getLatLng());
     map.fitBounds(L.latLngBounds(latlngs).pad(0.2));
+});
+
+async function searchLocation(q) {
+    if (!q.trim()) return;
+    try {
+        const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=' + encodeURIComponent(q);
+        const res = await fetch(url, { headers: { 'Accept-Language': 'fil-PH,en' } });
+        const data = await res.json();
+        if (!data.length) {
+            statusEl.textContent = 'Walang nahanap na lugar';
+            statusEl.classList.add('error');
+            return;
+        }
+        const loc = data[0];
+        map.setView([parseFloat(loc.lat), parseFloat(loc.lon)], 18);
+        if (window._infoMarker) map.removeLayer(window._infoMarker);
+        window._infoMarker = L.marker([parseFloat(loc.lat), parseFloat(loc.lon)])
+            .bindPopup('<b>' + esc(loc.display_name) + '</b><br>Lat: ' + loc.lat + '<br>Lng: ' + loc.lon)
+            .addTo(map).openPopup();
+        statusEl.textContent = 'Lokasyon nahanap';
+        statusEl.classList.remove('error');
+        statusEl.classList.add('active');
+    } catch (e) {
+        statusEl.textContent = 'Search error';
+        statusEl.classList.add('error');
+    }
+}
+
+searchBox.addEventListener('keydown', e => {
+    if (e.key === 'Enter') searchLocation(searchBox.value);
+});
+
+map.on('click', e => {
+    reverseGeocode(e.latlng.lat, e.latlng.lng).then(addr => {
+        statusEl.textContent = addr;
+        statusEl.classList.remove('error');
+        statusEl.classList.add('active');
+    });
 });
 
 initMap();
