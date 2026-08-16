@@ -13,10 +13,46 @@ const paths = {};        // device_id -> polyline
 const allPoints = {};    // device_id -> [[lat,lng],...]
 
 function initMap() {
-    map = L.map('map').setView([14.5995, 120.9842], 12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    map = L.map('map', {
+        zoomSnap: 0.5,
+        zoomDelta: 0.5,
+        maxZoom: 22
+    }).setView([14.5995, 120.9842], 12);
+
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-    }).addTo(map);
+    });
+
+    const gMap = L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+        maxNativeZoom: 22,
+        maxZoom: 23,
+        subdomains: '0123',
+        attribution: '&copy; Google Maps'
+    });
+
+    const gSat = L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+        maxNativeZoom: 22,
+        maxZoom: 23,
+        subdomains: '0123',
+        attribution: '&copy; Google Satellite'
+    });
+
+    const gHybrid = L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+        maxNativeZoom: 22,
+        maxZoom: 23,
+        subdomains: '0123',
+        attribution: '&copy; Google Hybrid'
+    });
+
+    gMap.addTo(map);
+
+    L.control.layers({
+        'Google Map': gMap,
+        'Google Satellite': gSat,
+        'Google Hybrid': gHybrid,
+        'OpenStreetMap': osm
+    }, null, { position: 'topleft' }).addTo(map);
 }
 
 function colorFor(id, idx) {
@@ -72,7 +108,7 @@ function renderList(devices) {
             <button class="focusBtn" data-id="${esc(d.device_id)}">${esc(d.name)}</button>
             <span>${ageText(d.age)}</span>`;
         dd.querySelector('.focusBtn').addEventListener('click', () => {
-            map.setView([d.lat, d.lng], 16);
+            map.setView([d.lat, d.lng], 19);
         });
         deviceListEl.appendChild(dd);
     });

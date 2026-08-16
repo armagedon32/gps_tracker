@@ -15,11 +15,15 @@
         android:label="GPS Tracker"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
-        android:allowBackup="true">
+        android:allowBackup="true"
+        android:theme="@style/Theme.GPSTracker">
 
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:label="GPS Tracker"
+            android:icon="@mipmap/ic_launcher"
+            android:theme="@style/Theme.GPSTracker">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

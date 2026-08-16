@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.GPSTracker" parent="Theme.AppCompat.DayNight">
+        <item name="colorPrimary">#1A2A3A</item>
+        <item name="colorPrimaryDark">#1A2A3A</item>
+        <item name="colorAccent">#3498DB</item>
+    </style>
+</resources>
