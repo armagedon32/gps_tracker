@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Simulator — Test Tool</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a2a3a;
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .card {
+            background: #22364a;
+            border-radius: 12px;
+            padding: 24px;
+            width: 100%;
+            max-width: 460px;
+            box-shadow: 0 8px 24px rgba(0,0,0,.3);
+        }
+        h1 { font-size: 1.15rem; margin-bottom: 4px; text-align: center; }
+        .sub { font-size: .78rem; color: #8fa3b5; text-align: center; margin-bottom: 16px; }
+        label { display: block; font-size: .85rem; margin: 12px 0 4px; color: #aab7c4; }
+        input {
+            width: 100%; padding: 10px 12px; border: 1px solid #3d5872;
+            border-radius: 8px; background: #1a2a3a; color: #fff; font-size: 1rem;
+        }
+        button {
+            width: 100%; padding: 12px; border: none; border-radius: 8px;
+            background: #3498db; color: #fff; font-size: .95rem; cursor: pointer;
+            margin-top: 10px; transition: background .2s;
+        }
+        button:hover { background: #2980b9; }
+        button:disabled { background: #55677a; cursor: not-allowed; }
+        #driveBtn.active { background: #e74c3c; }
+        #sosBtn { background: #c0392b; font-weight: bold; }
+        #sosBtn:hover { background: #a93226; }
+        #speedBtn { background: #f39c12; }
+        #speedBtn:hover { background: #d68910; }
+        .row { display: flex; gap: 10px; }
+        .row button { flex: 1; }
+        #status { margin-top: 14px; text-align: center; font-size: .85rem; color: #aab7c4; min-height: 1.2em; }
+        #status.ok { color: #2ecc71; }
+        #status.err { color: #e74c3c; }
+        #log {
+            margin-top: 12px; max-height: 150px; overflow-y: auto;
+            font-family: Consolas, monospace; font-size: .72rem; color: #8fa3b5;
+            border-top: 1px solid #3d5872; padding-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>🧪 GPS Simulator</h1>
+        <div class="sub">Fake device para subukan ang dashboard nang hindi lumalakad. Buksan ang dashboard sa ibang tab.</div>
+
+        <label>Pangalan ng device</label>
+        <input type="text" id="deviceName" value="Simulated Tricycle">
+
+        <button id="driveBtn">▶ Start Drive (dadaan sa unang geofence)</button>
+        <div class="row">
+            <button id="speedBtn">⚡ Speeding Burst</button>
+            <button id="sosBtn">🆘 Send SOS</button>
+        </div>
+        <button id="stopBtn">⏹ Stop / Go Offline</button>
+
+        <div id="status">Handa.</div>
+        <div id="log"></div>
+    </div>
+
+    <script>
+        const nameInput = document.getElementById('deviceName');
+        const driveBtn = document.getElementById('driveBtn');
+        const speedBtn = document.getElementById('speedBtn');
+        const sosBtn = document.getElementById('sosBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const statusEl = document.getElementById('status');
+        const logEl = document.getElementById('log');
+
+        const API = window.location.hostname.toLowerCase().includes('github.io')
+            ? 'https://gpstracker.vibenest.net' : '';
+
+        const deviceId = 'SIM-' + Math.floor(Math.random() * 9000 + 1000);
+        let timer = null;
+        let route = [];      // [{lat,lng},...]
+        let step = 0;
+        let curPos = null;
+        let driving = false;
+
+        function setStatus(msg, cls = '') {
+            statusEl.textContent = msg;
+            statusEl.className = cls;
+        }
+
+        function log(msg) {
+            const t = new Date().toLocaleTimeString();
+            logEl.innerHTML = `<div>[${t}] ${msg}</div>` + logEl.innerHTML;
+        }
+
+        async function post(path, body) {
+            const res = await fetch(API + path, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || res.status);
+            return data;
+        }
+
+        async function sendPoint(lat, lng, speedMs) {
+            curPos = { lat, lng };
+            const body = {
+                device_id: deviceId,
+                name: nameInput.value.trim() || deviceId,
+                lat, lng,
+                accuracy: 8,
+                speed: speedMs
+            };
+            const r = await post('/api/location', body);
+            log(`📍 ${lat.toFixed(5)}, ${lng.toFixed(5)} @ ${(speedMs * 3.6).toFixed(0)} km/h${r.events ? ' — <b style="color:#f1c40f">' + r.events + ' event(s)!</b>' : ''}`);
+        }
+
+        // Build a route that passes through the first geofence (north -> center -> south)
+        async function buildRoute() {
+            let center = { lat: 14.5995, lng: 120.9842 };
+            try {
+                const fences = await (await fetch(API + '/api/geofences')).json();
+                if (Array.isArray(fences) && fences.length) {
+                    center = { lat: fences[0].lat, lng: fences[0].lng };
+                    setStatus('Target: geofence \'' + fences[0].name + '\'', 'ok');
+                } else {
+                    setStatus('Walang geofence — gumawa muna sa dashboard para makakita ng enter/exit alert.', 'err');
+                }
+            } catch (e) { /* use default */ }
+            const km = 0.0135;  // ~1.5 km in degrees latitude
+            const pts = [];
+            for (let i = 0; i <= 30; i++) {          // north -> center (1.5km)
+                pts.push({ lat: center.lat + km - (km * 2) * (i / 30) * 0.5, lng: center.lng + 0.002 * (i / 30) });
+            }
+            for (let i = 1; i <= 30; i++) {          // center -> south (1.5km)
+                pts.push({ lat: center.lat - km * (i / 30), lng: center.lng + 0.002 + 0.002 * (i / 30) });
+            }
+            return pts;
+        }
+
+        async function startDrive() {
+            driving = true;
+            driveBtn.classList.add('active');
+            driveBtn.textContent = '▶ Driving... (click Stop muna para magpalit)';
+            driveBtn.disabled = true;
+            setStatus('Gumagawa ng ruta...');
+            route = await buildRoute();
+            step = 0;
+            setStatus('Nagmamaneho na... 🚗 (bantayan ang dashboard)', 'ok');
+            log('🚗 Drive started: ' + deviceId);
+            timer = setInterval(async () => {
+                const p = route[step % route.length];
+                step++;
+                try {
+                    await sendPoint(p.lat, p.lng, 8);   // ~29 km/h cruise
+                } catch (e) {
+                    setStatus('Error: ' + e.message, 'err');
+                    stopAll();
+                }
+            }, 1200);
+        }
+
+        function stopAll() {
+            driving = false;
+            clearInterval(timer);
+            timer = null;
+            driveBtn.classList.remove('active');
+            driveBtn.textContent = '▶ Start Drive (dadaan sa unang geofence)';
+            driveBtn.disabled = false;
+            setStatus('Huminto ang pag-send. 🟠 Offline alert sa dashboard pagkatapos ng offline threshold (i-set sa 1 min sa Settings para mabilis).', '');
+            log('⏹ Stopped sending');
+        }
+
+        speedBtn.addEventListener('click', async () => {
+            const base = curPos || { lat: 14.5995, lng: 120.9842 };
+            setStatus('⚡ Speeding burst — 3 points @ 120 km/h...');
+            try {
+                for (let i = 0; i < 3; i++) {
+                    await sendPoint(base.lat + 0.0001 * i, base.lng + 0.0002 * i, 33.3);  // 120 km/h
+                }
+                setStatus('⚡ Naipadala! (Kailangang may speed limit sa ⚙️ Settings — hal. 60)', 'ok');
+            } catch (e) {
+                setStatus('Error: ' + e.message, 'err');
+            }
+        });
+
+        sosBtn.addEventListener('click', async () => {
+            const p = curPos || { lat: 14.5995, lng: 120.9842 };
+            setStatus('🆘 Ipinapadala ang SOS...');
+            try {
+                await post('/api/sos', {
+                    device_id: deviceId,
+                    name: nameInput.value.trim() || deviceId,
+                    lat: p.lat, lng: p.lng, accuracy: 8
+                });
+                setStatus('🆘 SOS NAIPADALA! Malakas na siren ang maririnig sa dashboard.', 'ok');
+                log('🆘 SOS sent');
+            } catch (e) {
+                setStatus('Error: ' + e.message, 'err');
+            }
+        });
+
+        driveBtn.addEventListener('click', () => { if (!driving) startDrive(); });
+        stopBtn.addEventListener('click', stopAll);
+    </script>
+</body>
+</html>

@@ -544,3 +544,17 @@ button.ghost:hover {
     background: #f1c40f;
     color: #333;
 }
+
+#simLink {
+    padding: 8px 16px;
+    border: 1px dashed #3498db;
+    border-radius: 6px;
+    color: #3498db;
+    font-size: 0.85rem;
+    text-decoration: none;
+    display: inline-block;
+}
+
+#simLink:hover {
+    background: #eaf4fb;
+}
