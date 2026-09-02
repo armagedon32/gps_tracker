@@ -17,11 +17,16 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import org.json.JSONObject
+import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
+import java.net.URL
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var nameInput: EditText
     private lateinit var startBtn: Button
+    private lateinit var sosBtn: Button
     private lateinit var statusText: TextView
     private val prefs: SharedPreferences by lazy {
         getSharedPreferences("gps_tracker", Context.MODE_PRIVATE)
@@ -60,6 +65,7 @@ class MainActivity : AppCompatActivity() {
 
         nameInput = findViewById(R.id.nameInput)
         startBtn = findViewById(R.id.startBtn)
+        sosBtn = findViewById(R.id.sosBtn)
         statusText = findViewById(R.id.statusText)
 
         nameInput.setText(prefs.getString("device_name", ""))
@@ -72,10 +78,14 @@ class MainActivity : AppCompatActivity() {
                 prefs.edit().putString("device_name", nameInput.text.toString().trim()).apply()
                 checkPermissionsAndStart()
             } else {
+                // User-initiated stop: disable boot auto-restart
+                prefs.edit().putBoolean("tracking_enabled", false).apply()
                 stopService(Intent(this, LocationService::class.java))
                 updateUI(false)
             }
         }
+
+        sosBtn.setOnClickListener { sendSos() }
 
         requestBatteryOptimizationIfNeeded()
     }
@@ -125,6 +135,50 @@ class MainActivity : AppCompatActivity() {
             startBtn.text = "SIMULAN ang pag-track"
             statusText.text = "Hindi nagta-track."
         }
+    }
+
+    private fun sendSos() {
+        val latStr = prefs.getString("last_lat", null)
+        val lngStr = prefs.getString("last_lng", null)
+        if (latStr == null || lngStr == null) {
+            Toast.makeText(this, "Walang GPS fix pa. Pindutin muna ang SIMULAN ang pag-track.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val deviceId = prefs.getString("device_id", "UNKNOWN") ?: "UNKNOWN"
+        val name = prefs.getString("device_name", "") ?: ""
+        Toast.makeText(this, "Ipinapadala ang SOS...", Toast.LENGTH_SHORT).show()
+        Thread {
+            var ok = false
+            try {
+                val conn = URL("${BuildConfig.API_BASE}/api/sos").openConnection() as HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.doOutput = true
+                conn.connectTimeout = 10000
+                conn.readTimeout = 10000
+                conn.setRequestProperty("Content-Type", "application/json")
+                val body = JSONObject()
+                body.put("device_id", deviceId)
+                body.put("name", name)
+                body.put("lat", latStr.toDouble())
+                body.put("lng", lngStr.toDouble())
+                conn.outputStream.use { os ->
+                    val writer = OutputStreamWriter(os, Charsets.UTF_8)
+                    writer.write(body.toString())
+                    writer.flush()
+                }
+                ok = conn.responseCode in 200..299
+                conn.disconnect()
+            } catch (e: Exception) {
+                // ignore
+            }
+            runOnUiThread {
+                if (ok) {
+                    Toast.makeText(this, "🆘 SOS NAIPADALA! Nakikita na sa dashboard.", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this, "Hindi ma-send ang SOS — check ang internet.", Toast.LENGTH_LONG).show()
+                }
+            }
+        }.start()
     }
 
     private fun requestBatteryOptimizationIfNeeded() {
