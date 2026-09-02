@@ -67,6 +67,8 @@ class LocationService : Service() {
     override fun onCreate() {
         super.onCreate()
         running = true
+        // Mark tracking as enabled so BootReceiver can restart the service
+        prefs.edit().putBoolean("tracking_enabled", true).apply()
         createChannel()
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         val deviceId = prefs.getString("device_id", null)
@@ -159,6 +161,13 @@ class LocationService : Service() {
     }
 
     private fun sendLocation(location: Location, name: String) {
+        // Save the last fix so MainActivity can send an SOS with it
+        prefs.edit()
+            .putString("last_lat", location.latitude.toString())
+            .putString("last_lng", location.longitude.toString())
+            .putString("last_acc", location.accuracy.toString())
+            .putLong("last_fix_ts", System.currentTimeMillis())
+            .apply()
         Thread {
             try {
                 val deviceId = prefs.getString("device_id", "UNKNOWN") ?: "UNKNOWN"

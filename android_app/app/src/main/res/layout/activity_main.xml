@@ -48,6 +48,17 @@
             android:backgroundTint="#3498db"
             android:padding="14dp" />
 
+        <Button
+            android:id="@+id/sosBtn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🆘 SOS — IPADALA ANG TULONG"
+            android:textColor="#ffffff"
+            android:textStyle="bold"
+            android:backgroundTint="#c0392b"
+            android:padding="14dp"
+            android:layout_marginTop="12dp" />
+
         <TextView
             android:id="@+id/statusText"
             android:layout_width="match_parent"

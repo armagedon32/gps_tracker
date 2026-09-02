@@ -270,3 +270,277 @@ button:disabled {
     color: #999;
     cursor: default;
 }
+
+/* ----- Events & geofence list items ----- */
+#deviceList h3 {
+    margin-top: 12px;
+}
+
+#deviceList h3:first-child {
+    margin-top: 0;
+}
+
+.evtitem {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 0;
+    border-bottom: 1px solid #eee;
+    font-size: 0.78rem;
+}
+
+.evtitem:last-child {
+    border-bottom: none;
+}
+
+.evtitem .evdot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.55rem;
+    border: 2px solid #fff;
+    box-shadow: 0 0 3px rgba(0, 0, 0, 0.3);
+}
+
+.evtitem .evtmsg {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.evtitem .evttime {
+    color: #999;
+    font-size: 0.7rem;
+    flex-shrink: 0;
+}
+
+.evtitem.muted {
+    color: #999;
+    justify-content: center;
+}
+
+.delFence {
+    background: none;
+    border: none;
+    color: #e74c3c;
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 0 2px;
+}
+
+.delFence:hover {
+    transform: scale(1.2);
+}
+
+/* ----- Geofence map label ----- */
+.fenceLabel {
+    background: rgba(255, 255, 255, 0.85);
+    border: none;
+    border-radius: 4px;
+    color: #333;
+    font-size: 0.7rem;
+    font-weight: bold;
+    padding: 1px 5px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* ----- Draw-mode hint ----- */
+#mapHint {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #f1c40f;
+    color: #333;
+    font-size: 0.85rem;
+    font-weight: bold;
+    padding: 8px 16px;
+    border-radius: 20px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    z-index: 1500;
+    display: none;
+}
+
+/* ----- SOS overlay ----- */
+#sosOverlay {
+    position: absolute;
+    top: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2500;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    animation: sosPulse 1s infinite;
+}
+
+@keyframes sosPulse {
+    0% { filter: drop-shadow(0 0 4px #e74c3c); }
+    50% { filter: drop-shadow(0 0 18px #e74c3c); }
+    100% { filter: drop-shadow(0 0 4px #e74c3c); }
+}
+
+#sosCard {
+    background: #e74c3c;
+    color: #fff;
+    border-radius: 12px;
+    padding: 16px 20px;
+    text-align: center;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+    min-width: 300px;
+}
+
+#sosTitle {
+    font-size: 1.1rem;
+    font-weight: bold;
+    margin-bottom: 6px;
+}
+
+#sosInfo {
+    font-size: 0.95rem;
+    margin-bottom: 4px;
+}
+
+#sosAddr {
+    font-size: 0.8rem;
+    opacity: 0.9;
+    margin-bottom: 12px;
+}
+
+#sosBtns {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+}
+
+#sosBtns button {
+    background: #fff;
+    color: #e74c3c;
+    font-weight: bold;
+}
+
+#sosBtns button:hover {
+    background: #fdecea;
+}
+
+/* ----- Toasts ----- */
+#toasts {
+    position: fixed;
+    bottom: 70px;
+    right: 16px;
+    z-index: 3000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 320px;
+}
+
+.toast {
+    background: #22364a;
+    color: #fff;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+    border-left: 4px solid #3498db;
+    transition: opacity 0.5s;
+    word-wrap: break-word;
+}
+
+.toast.enter { border-left-color: #2ecc71; }
+.toast.exit { border-left-color: #3498db; }
+.toast.speeding { border-left-color: #f39c12; }
+.toast.offline { border-left-color: #e67e22; }
+.toast.online { border-left-color: #2ecc71; }
+.toast.error { border-left-color: #e74c3c; }
+
+.toast.fade {
+    opacity: 0;
+}
+
+/* ----- Settings modal ----- */
+#settingsModal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 4000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+}
+
+#settingsCard {
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px 24px;
+    width: 100%;
+    max-width: 380px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+#settingsCard h2 {
+    font-size: 1.1rem;
+    margin-bottom: 12px;
+    color: #1a2a3a;
+}
+
+#settingsCard label {
+    display: block;
+    font-size: 0.8rem;
+    color: #555;
+    margin: 10px 0 4px;
+}
+
+#settingsCard label.chk {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+#settingsCard input[type="number"] {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 0.9rem;
+}
+
+#settingsCard .permrow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+#settingsCard #notifPermState {
+    font-size: 0.75rem;
+    color: #888;
+}
+
+#settingsCard .btnrow {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+button.ghost {
+    background: none;
+    border: 1px solid #ccc;
+    color: #666;
+}
+
+button.ghost:hover {
+    background: #f4f4f4;
+}
+
+#fenceBtn.active {
+    background: #f1c40f;
+    color: #333;
+}

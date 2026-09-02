@@ -19,6 +19,7 @@
 
     <main>
         <div id="map"></div>
+        <div id="mapHint"></div>
         <div id="deviceDetail">
             <button class="close" onclick="document.getElementById('deviceDetail').style.display='none'">&times;</button>
             <strong id="ddName">--</strong><br>
@@ -27,6 +28,18 @@
             <div class="addr" id="ddAddr">Loading address...</div>
         </div>
         <div id="deviceList"></div>
+
+        <div id="sosOverlay">
+            <div id="sosCard">
+                <div id="sosTitle">🆘 SOS — EMERGENCY ALERT</div>
+                <div id="sosInfo">--</div>
+                <div id="sosAddr">--</div>
+                <div id="sosBtns">
+                    <button id="sosLocate">📍 Locate on Map</button>
+                    <button id="sosAck">✓ Acknowledge</button>
+                </div>
+            </div>
+        </div>
     </main>
 
     <footer>
@@ -37,8 +50,32 @@
         <div id="controls">
             <button id="refreshBtn">Refresh Now</button>
             <button id="centerBtn">Center on All</button>
+            <button id="fenceBtn" title="Add a geofence zone">➕ Geofence</button>
+            <button id="settingsBtn" title="Alert settings">⚙️ Settings</button>
         </div>
     </footer>
+
+    <div id="toasts"></div>
+
+    <div id="settingsModal">
+        <div id="settingsCard">
+            <h2>⚙️ Alert Settings</h2>
+            <label>Speed limit (km/h) — 0 = off</label>
+            <input type="number" id="setSpeed" min="0" max="300" placeholder="0">
+            <label>Offline alert after (minutes)</label>
+            <input type="number" id="setOffline" min="1" max="1440" placeholder="5">
+            <label class="chk"><input type="checkbox" id="setSound"> Sound alerts (kasama ang SOS siren)</label>
+            <label class="chk"><input type="checkbox" id="setNotif"> Browser notifications</label>
+            <div class="permrow">
+                <button id="reqNotifBtn" class="ghost">🔔 Enable notifications</button>
+                <span id="notifPermState"></span>
+            </div>
+            <div class="btnrow">
+                <button id="settingsClose" class="ghost">Cancel</button>
+                <button id="settingsSave">Save</button>
+            </div>
+        </div>
+    </div>
 
     <script src="js/dashboard.js"></script>
 </body>

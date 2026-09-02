@@ -50,6 +50,13 @@
         }
         button:hover { background: #2980b9; }
         #sendBtn.active { background: #e74c3c; }
+        #sosBtn {
+            background: #c0392b;
+            margin-top: 10px;
+            font-weight: bold;
+            letter-spacing: .5px;
+        }
+        #sosBtn:hover { background: #a93226; }
         #status {
             margin-top: 16px;
             text-align: center;
@@ -75,6 +82,7 @@
         <label>Pangalan ng device / sasakyan</label>
         <input type="text" id="deviceName" placeholder="Hal. Tricycle #1, Kanang phone ng nanay">
         <button id="sendBtn">Start Sending</button>
+        <button id="sosBtn">🆘 SOS — IPADALA ANG TULONG</button>
         <div id="status">Kalagayan: Handa</div>
         <div class="live">
             <span>Lat <b id="lat">--</b></span>
@@ -89,6 +97,7 @@
     <script>
         const nameInput = document.getElementById('deviceName');
         const sendBtn = document.getElementById('sendBtn');
+        const sosBtn = document.getElementById('sosBtn');
         const statusEl = document.getElementById('status');
         const latEl = document.getElementById('lat');
         const lngEl = document.getElementById('lng');
@@ -100,17 +109,25 @@
             ? 'https://gpstracker.vibenest.net'
             : '';
         const API_URL = API_BASE + '/api/location';
+        const SOS_URL = API_BASE + '/api/sos';
 
         let watchId = null;
         let started = false;
         let deviceId = '';
+        let lastPos = null;
+
+        function makeDeviceId() {
+            const d = new Date();
+            return 'D' + d.getFullYear().toString().slice(2)
+                + String(d.getMonth() + 1).padStart(2, '0')
+                + String(d.getDate()).padStart(2, '0')
+                + '-' + String(Math.floor(Math.random() * 9000) + 1000);
+        }
 
         function setStatus(msg, cls = '') {
             statusEl.textContent = msg;
             statusEl.className = cls;
         }
-
-        let lastLat = null, lastLng = null;
 
         async function send(lat, lng, accuracy, speed) {
             const body = {
@@ -139,6 +156,7 @@
 
         function onPosition(pos) {
             const { latitude, longitude, accuracy, speed } = pos.coords;
+            lastPos = pos.coords;
             latEl.textContent = latitude.toFixed(6);
             lngEl.textContent = longitude.toFixed(6);
             accEl.textContent = accuracy.toFixed(0);
@@ -156,7 +174,7 @@
                     setStatus('Hindi sinusuportahan ng browser ang geolocation.', 'err');
                     return;
                 }
-                deviceId = (Math.random().toString(36).slice(2, 8)).toUpperCase();
+                deviceId = makeDeviceId();
                 sendBtn.textContent = 'Stop Sending';
                 sendBtn.classList.add('active');
                 setStatus('Naghahanap ng lokasyon...');
@@ -165,9 +183,6 @@
                     maximumAge: 5000,
                     timeout: 10000
                 });
-                const d = new Date();
-                const dId = 'D' + d.getFullYear().toString().slice(2) + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0') + '-' + String(Math.floor(Math.random() * 9000) + 1000);
-                deviceId = dId;
                 started = true;
             } else {
                 navigator.geolocation.clearWatch(watchId);
@@ -177,6 +192,45 @@
                 setStatus('Tumigil. Device ID: ' + deviceId, 'ok');
             }
         }
+
+        async function sendSos(coords) {
+            try {
+                const res = await fetch(SOS_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        device_id: deviceId,
+                        name: nameInput.value.trim() || deviceId,
+                        lat: coords.latitude,
+                        lng: coords.longitude,
+                        accuracy: coords.accuracy || null
+                    })
+                });
+                if (res.ok) {
+                    setStatus('🆘 SOS NAIPADALA! Nakikita na sa dashboard.', 'ok');
+                } else {
+                    setStatus('Hindi ma-send ang SOS (' + res.status + ').', 'err');
+                }
+            } catch (e) {
+                setStatus('Walang server connection (' + e.message + ')', 'err');
+            }
+        }
+
+        sosBtn.addEventListener('click', () => {
+            if (!deviceId) deviceId = makeDeviceId();
+            setStatus('Ipinapadala ang SOS...');
+            if (lastPos) {
+                sendSos(lastPos);
+            } else if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    p => { lastPos = p.coords; sendSos(p.coords); },
+                    err => setStatus('Walang GPS fix: ' + err.message, 'err'),
+                    { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
+                );
+            } else {
+                setStatus('Hindi supportado ang geolocation ng browser.', 'err');
+            }
+        });
 
         sendBtn.addEventListener('click', toggle);
     </script>
