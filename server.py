@@ -1,11 +1,14 @@
 import json
 import math
 import os
+import re
+import sqlite3
 import threading
 import time
 import uuid
+from datetime import datetime, timezone
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request, send_from_directory
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__)
@@ -28,19 +31,24 @@ DATA_FILE = os.path.join(DATA_DIR, "locations.json")
 FENCE_FILE = os.path.join(DATA_DIR, "geofences.json")
 EVENT_FILE = os.path.join(DATA_DIR, "events.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
+DB_FILE = os.path.join(DATA_DIR, "tracker.db")
 
-MAX_POINTS_PER_DEVICE = 2000
+MAX_POINTS_PER_DEVICE = 2000        # live JSON trail cap (SQLite keeps full history)
 MAX_EVENTS = 500
 SPEEDING_DEDUPE_MS = 5 * 60 * 1000          # one speeding alert per device per 5 min
 OFFLINE_CHECK_INTERVAL = 30.0               # seconds between offline sweeps
 OFFLINE_MAX_AGE_MS = 24 * 60 * 60 * 1000    # ignore devices not seen for over a day
+TRIP_GAP_MS = 5 * 60 * 1000                 # gap between points that splits trips
+MAX_SEGMENT_SPEED_MS = 83.0                 # ~300 km/h; skip faster (teleport/noise) segments
+HISTORY_LIMIT = 20000                       # max points returned per history query
 
 FENCE_COLORS = ["#e74c3c", "#9b59b6", "#f39c12", "#16a085", "#2980b9", "#d35400"]
 
 # All data files are small JSON; guard read-modify-write cycles with one lock.
+# The lock also guards the SQLite connection (single-connection design).
 data_lock = threading.Lock()
 
-DEFAULT_SETTINGS = {"speed_limit_kmh": 0, "offline_minutes": 5}
+DEFAULT_SETTINGS = {"speed_limit_kmh": 0, "offline_minutes": 5, "history_days": 30}
 
 
 # ---------------------------------------------------------------------------
@@ -111,7 +119,102 @@ def make_event(ev_type, device_id, device_name, message, data=None):
 
 
 # ---------------------------------------------------------------------------
-# Geo helpers
+# SQLite history archive
+# ---------------------------------------------------------------------------
+
+_db = None
+
+
+def get_db():
+    global _db
+    if _db is None:
+        _db = sqlite3.connect(DB_FILE, check_same_thread=False)
+        _db.row_factory = sqlite3.Row
+        _db.execute("PRAGMA journal_mode=WAL")
+        _db.execute(
+            """CREATE TABLE IF NOT EXISTS points (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT NOT NULL,
+                ts INTEGER NOT NULL,
+                lat REAL NOT NULL,
+                lng REAL NOT NULL,
+                accuracy REAL,
+                speed REAL
+            )"""
+        )
+        _db.execute("CREATE INDEX IF NOT EXISTS idx_points_device_ts ON points(device_id, ts)")
+        _db.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
+        _db.commit()
+    return _db
+
+
+def db_insert_point(device_id, p):
+    get_db().execute(
+        "INSERT INTO points (device_id, ts, lat, lng, accuracy, speed) VALUES (?,?,?,?,?,?)",
+        (device_id, p["ts"], p["lat"], p["lng"], p.get("accuracy"), p.get("speed")),
+    )
+    get_db().commit()
+
+
+def db_latest_point(device_id):
+    row = get_db().execute(
+        "SELECT ts, lat, lng, speed FROM points WHERE device_id=? ORDER BY ts DESC, id DESC LIMIT 1",
+        (device_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def db_trail(device_id, n=100):
+    rows = get_db().execute(
+        "SELECT ts, lat, lng, accuracy, speed FROM points WHERE device_id=? ORDER BY ts DESC LIMIT ?",
+        (device_id, n),
+    ).fetchall()
+    return [dict(r) for r in reversed(rows)]
+
+
+def db_points_range(device_id, from_ts, to_ts, limit=HISTORY_LIMIT):
+    rows = get_db().execute(
+        "SELECT ts, lat, lng, accuracy, speed FROM points "
+        "WHERE device_id=? AND ts>=? AND ts<=? ORDER BY ts ASC LIMIT ?",
+        (device_id, from_ts, to_ts, limit),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def cleanup_old_points(history_days):
+    cutoff = int(time.time() * 1000) - int(history_days) * 86400000
+    cur = get_db().execute("DELETE FROM points WHERE ts < ?", (cutoff,))
+    get_db().commit()
+    return cur.rowcount
+
+
+def backfill_db_from_json():
+    """One-time import of existing JSON history into the SQLite archive.
+
+    Uses a claim row in `meta` so multi-worker servers don't double-import.
+    Call under data_lock.
+    """
+    db = get_db()
+    claimed = db.execute(
+        "INSERT OR IGNORE INTO meta (key, value) VALUES ('backfill_done', '1')"
+    ).rowcount
+    db.commit()
+    if not claimed:
+        return
+    data = load_data()
+    for device_id, device in data.items():
+        pts = device.get("points") or []
+        if not pts:
+            continue
+        db.executemany(
+            "INSERT INTO points (device_id, ts, lat, lng, accuracy, speed) VALUES (?,?,?,?,?,?)",
+            [(device_id, p["ts"], p["lat"], p["lng"], p.get("accuracy"), p.get("speed")) for p in pts],
+        )
+    db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Geo helpers + trip/summary analytics
 # ---------------------------------------------------------------------------
 
 def haversine_m(lat1, lng1, lat2, lng2):
@@ -123,12 +226,62 @@ def haversine_m(lat1, lng1, lat2, lng2):
     return 2 * r * math.asin(math.sqrt(a))
 
 
+def summarize_points(points):
+    dist = 0.0
+    max_kmh = 0.0
+    speed_sum, speed_n = 0.0, 0
+    for i, p in enumerate(points):
+        s = p.get("speed")
+        if s:
+            kmh = s * 3.6
+            max_kmh = max(max_kmh, kmh)
+            speed_sum += kmh
+            speed_n += 1
+        if i > 0:
+            d = haversine_m(points[i - 1]["lat"], points[i - 1]["lng"], p["lat"], p["lng"])
+            dt = p["ts"] - points[i - 1]["ts"]
+            if dt > 0 and d / dt <= MAX_SEGMENT_SPEED_MS:
+                dist += d
+    duration = (points[-1]["ts"] - points[0]["ts"]) if len(points) > 1 else 0
+    return {
+        "distance_m": round(dist, 1),
+        "duration_ms": duration,
+        "max_speed_kmh": round(max_kmh, 1),
+        "avg_speed_kmh": round(speed_sum / speed_n, 1) if speed_n else 0.0,
+        "points": len(points),
+    }
+
+
+def detect_trips(points):
+    """Split a point list into trips separated by gaps > TRIP_GAP_MS."""
+    groups, cur = [], []
+    for p in points:
+        if cur and p["ts"] - cur[-1]["ts"] > TRIP_GAP_MS:
+            groups.append(cur)
+            cur = []
+        cur.append(p)
+    if cur:
+        groups.append(cur)
+    return [
+        {"start_ts": t[0]["ts"], "end_ts": t[-1]["ts"], **summarize_points(t)}
+        for t in groups
+    ]
+
+
 def _as_float(v):
     try:
         f = float(v)
         return f if math.isfinite(f) else None
     except (TypeError, ValueError):
         return None
+
+
+def _iso_utc(ms):
+    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _safe_filename(s):
+    return re.sub(r"[^A-Za-z0-9_-]", "_", s)[:60] or "device"
 
 
 # ---------------------------------------------------------------------------
@@ -198,6 +351,7 @@ def post_location():
 
         new_events = evaluate_alerts(device_id, dev_name, prev, point, prev_seen)
         save_data(data)
+        db_insert_point(device_id, point)  # full-resolution archive
         if new_events:
             events = load_events()
             events.extend(new_events)
@@ -286,6 +440,107 @@ def get_locations():
             }
         )
     return jsonify(result)
+
+
+# ---------------------------------------------------------------------------
+# History, trips & export
+# ---------------------------------------------------------------------------
+
+def _parse_range_args():
+    """Parse device_id/from/to query args. Returns (device_id, from, to, err)."""
+    device_id = str(request.args.get("device_id", "")).strip()
+    if not device_id:
+        return None, None, None, ("device_id is required", 400)
+    now = int(time.time() * 1000)
+
+    def ts_arg(name, default):
+        v = request.args.get(name)
+        if v is None or not str(v).strip():
+            return default
+        try:
+            return int(float(v))
+        except (TypeError, ValueError):
+            return None
+
+    from_ts = ts_arg("from", now - 24 * 3600 * 1000)
+    to_ts = ts_arg("to", now)
+    if from_ts is None or to_ts is None:
+        return None, None, None, ("from/to must be millisecond timestamps", 400)
+    if to_ts < from_ts:
+        from_ts, to_ts = to_ts, from_ts
+    return device_id, from_ts, to_ts, None
+
+
+@app.route("/api/history")
+def get_history():
+    device_id, from_ts, to_ts, err = _parse_range_args()
+    if err:
+        return jsonify({"error": err[0]}), err[1]
+
+    with data_lock:
+        points = db_points_range(device_id, from_ts, to_ts)
+
+    resp = {
+        "device_id": device_id,
+        "from": from_ts,
+        "to": to_ts,
+        "count": len(points),
+        "points": points,
+        "summary": summarize_points(points) if points else None,
+        "trips": detect_trips(points) if points else [],
+    }
+    return jsonify(resp)
+
+
+@app.route("/api/export")
+def export_history():
+    device_id, from_ts, to_ts, err = _parse_range_args()
+    if err:
+        return jsonify({"error": err[0]}), err[1]
+    fmt = request.args.get("format", "gpx").lower()
+    if fmt not in ("gpx", "csv"):
+        return jsonify({"error": "format must be gpx or csv"}), 400
+
+    with data_lock:
+        points = db_points_range(device_id, from_ts, to_ts)
+    if not points:
+        return jsonify({"error": "no points in range"}), 404
+
+    base = f"{_safe_filename(device_id)}_{from_ts}-{to_ts}"
+
+    if fmt == "csv":
+        lines = ["timestamp,lat,lng,accuracy_m,speed_mps,speed_kmh"]
+        for p in points:
+            spd = p.get("speed")
+            lines.append(",".join([
+                _iso_utc(p["ts"]),
+                f"{p['lat']:.6f}",
+                f"{p['lng']:.6f}",
+                "" if p.get("accuracy") is None else f"{p['accuracy']:.1f}",
+                "" if spd is None else f"{spd:.2f}",
+                "" if spd is None else f"{spd * 3.6:.2f}",
+            ]))
+        body = "\n".join(lines) + "\n"
+        mime = "text/csv"
+    else:
+        trkpts = "".join(
+            f'<trkpt lat="{p["lat"]:.7f}" lon="{p["lng"]:.7f}">'
+            f"<time>{_iso_utc(p['ts'])}</time></trkpt>"
+            for p in points
+        )
+        body = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<gpx version="1.1" creator="GPS Tracker" '
+            'xmlns="http://www.topografix.com/GPX/1/1">'
+            f"<trk><name>{device_id}</name><trkseg>{trkpts}</trkseg></trk></gpx>"
+        )
+        mime = "application/gpx+xml"
+
+    return Response(
+        body,
+        mimetype=mime,
+        headers={"Content-Disposition": f"attachment; filename={base}.{fmt}"},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -424,12 +679,15 @@ def post_settings():
         mins = _as_float(body.get("offline_minutes"))
         if mins is not None:
             settings["offline_minutes"] = int(max(1, min(1440, mins)))
+        days = _as_float(body.get("history_days"))
+        if days is not None:
+            settings["history_days"] = int(max(1, min(365, days)))
         save_settings(settings)
         return jsonify(settings)
 
 
 # ---------------------------------------------------------------------------
-# Offline monitor (devices that stopped sending)
+# Background monitors
 # ---------------------------------------------------------------------------
 
 def check_offline_devices():
@@ -471,7 +729,29 @@ def _offline_monitor_loop():
             pass
 
 
+def _retention_loop():
+    while True:
+        time.sleep(6 * 3600)
+        try:
+            with data_lock:
+                cleanup_old_points(load_settings().get("history_days", 30))
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Startup: migrate old JSON history into the archive, prune, start monitors
+# ---------------------------------------------------------------------------
+
+try:
+    with data_lock:
+        backfill_db_from_json()
+        cleanup_old_points(load_settings().get("history_days", 30))
+except Exception:
+    pass
+
 threading.Thread(target=_offline_monitor_loop, daemon=True).start()
+threading.Thread(target=_retention_loop, daemon=True).start()
 
 
 if __name__ == "__main__":

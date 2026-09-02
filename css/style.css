@@ -463,8 +463,8 @@ button:disabled {
     opacity: 0;
 }
 
-/* ----- Settings modal ----- */
-#settingsModal {
+/* ----- Settings / History modals (shared) ----- */
+.modal {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.5);
@@ -474,7 +474,7 @@ button:disabled {
     justify-content: center;
 }
 
-#settingsCard {
+.modalCard {
     background: #fff;
     border-radius: 12px;
     padding: 20px 24px;
@@ -483,27 +483,34 @@ button:disabled {
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
-#settingsCard h2 {
+.modalCard.wide {
+    max-width: 520px;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.modalCard h2 {
     font-size: 1.1rem;
     margin-bottom: 12px;
     color: #1a2a3a;
 }
 
-#settingsCard label {
+.modalCard label {
     display: block;
     font-size: 0.8rem;
     color: #555;
     margin: 10px 0 4px;
 }
 
-#settingsCard label.chk {
+.modalCard label.chk {
     display: flex;
     align-items: center;
     gap: 8px;
     cursor: pointer;
 }
 
-#settingsCard input[type="number"] {
+.modalCard input[type="number"],
+.modalCard input[type="datetime-local"] {
     width: 100%;
     padding: 8px 10px;
     border: 1px solid #ccc;
@@ -511,23 +518,159 @@ button:disabled {
     font-size: 0.9rem;
 }
 
-#settingsCard .permrow {
+.modalCard select {
+    padding: 8px 10px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    background: #fff;
+}
+
+.modalCard .permrow {
     display: flex;
     align-items: center;
     gap: 10px;
     margin-top: 12px;
 }
 
-#settingsCard #notifPermState {
+.modalCard #notifPermState {
     font-size: 0.75rem;
     color: #888;
 }
 
-#settingsCard .btnrow {
+.modalCard .btnrow {
     display: flex;
     justify-content: flex-end;
     gap: 8px;
     margin-top: 16px;
+}
+
+/* ----- History modal specifics ----- */
+.histControls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.histControls select {
+    flex: 1;
+    min-width: 140px;
+}
+
+.histControls input[type="datetime-local"] {
+    flex: 1;
+    min-width: 150px;
+}
+
+.histControls button {
+    white-space: nowrap;
+}
+
+.histSummary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 12px;
+}
+
+.histSummary:empty {
+    display: none;
+}
+
+.chip {
+    background: #eaf4fb;
+    color: #1a6daa;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: bold;
+    padding: 4px 10px;
+}
+
+#histPlayer {
+    margin-top: 12px;
+    display: none;
+}
+
+.histPlayRow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.histPlayRow button {
+    padding: 6px 12px;
+}
+
+.histPlayRow button.sm {
+    padding: 6px 9px;
+}
+
+.histPlayRow select {
+    padding: 6px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    background: #fff;
+    font-size: 0.85rem;
+}
+
+#histInfo {
+    font-size: 0.78rem;
+    color: #555;
+    margin-left: auto;
+    font-family: Consolas, monospace;
+    white-space: nowrap;
+}
+
+#histSlider {
+    width: 100%;
+    margin-top: 10px;
+    accent-color: #3498db;
+}
+
+#histTrips {
+    margin-top: 12px;
+}
+
+.tripsTbl {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.75rem;
+}
+
+.tripsTbl th {
+    text-align: left;
+    color: #888;
+    font-weight: 600;
+    padding: 4px 6px;
+    border-bottom: 1px solid #ddd;
+}
+
+.tripsTbl td {
+    padding: 5px 6px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.tripsTbl tr.tripRow {
+    cursor: pointer;
+}
+
+.tripsTbl tr.tripRow:hover {
+    background: #eaf4fb;
+}
+
+.histDot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #3498db;
+    border: 3px solid #fff;
+    animation: histPulse 1.2s infinite;
+}
+
+@keyframes histPulse {
+    0% { box-shadow: 0 0 0 0 rgba(52, 152, 219, 0.6); }
+    70% { box-shadow: 0 0 0 12px rgba(52, 152, 219, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(52, 152, 219, 0); }
 }
 
 button.ghost {

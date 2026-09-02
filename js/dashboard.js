@@ -5,6 +5,7 @@ const refreshBtn = document.getElementById('refreshBtn');
 const centerBtn = document.getElementById('centerBtn');
 const fenceBtn = document.getElementById('fenceBtn');
 const settingsBtn = document.getElementById('settingsBtn');
+const historyBtn = document.getElementById('historyBtn');
 const deviceListEl = document.getElementById('deviceList');
 const searchBox = document.getElementById('searchBox');
 const ddNameEl = document.getElementById('ddName');
@@ -27,7 +28,8 @@ let eventsCache = [];            // newest first
 let eventsBooted = false;
 let lastEventTs = 0;
 let drawMode = null;             // {stage:'center'|'radius', center, preview}
-let settings = { speed_limit_kmh: 0, offline_minutes: 5 };
+let settings = { speed_limit_kmh: 0, offline_minutes: 5, history_days: 30 };
+let devicesCache = [];           // last /api/locations result for history dropdown
 
 function initMap() {
     map = L.map('map', {
@@ -401,6 +403,7 @@ deviceListEl.addEventListener('click', e => {
 function openSettings() {
     document.getElementById('setSpeed').value = settings.speed_limit_kmh || 0;
     document.getElementById('setOffline').value = settings.offline_minutes || 5;
+    document.getElementById('setHistoryDays').value = settings.history_days || 30;
     document.getElementById('setSound').checked = sound_on();
     document.getElementById('setNotif').checked = notifOn();
     updateNotifPermLabel();
@@ -434,7 +437,8 @@ document.getElementById('settingsSave').addEventListener('click', async () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 speed_limit_kmh: parseFloat(document.getElementById('setSpeed').value) || 0,
-                offline_minutes: parseInt(document.getElementById('setOffline').value) || 5
+                offline_minutes: parseInt(document.getElementById('setOffline').value) || 5,
+                history_days: parseInt(document.getElementById('setHistoryDays').value) || 30
             })
         });
         settings = await res.json();
@@ -605,6 +609,7 @@ async function refresh() {
             activeIds.add(d.device_id);
             updateDevice(d, idx);
         });
+        devicesCache = devices;
 
         Object.keys(markers).forEach(id => {
             if (!activeIds.has(id)) {
@@ -665,6 +670,202 @@ async function searchLocation(q) {
 searchBox.addEventListener('keydown', e => {
     if (e.key === 'Enter') searchLocation(searchBox.value);
 });
+
+// ---------------------------------------------------------------------------
+// History playback & reports
+// ---------------------------------------------------------------------------
+
+const histState = {
+    device: null, from: 0, to: 0,
+    points: [], trips: [], idx: 0,
+    playing: false, timer: null,
+    marker: null, trail: null, fullLine: null
+};
+
+function fmtDist(m) {
+    if (m == null) return '--';
+    return m < 1000 ? Math.round(m) + ' m' : (m / 1000).toFixed(2) + ' km';
+}
+
+function fmtDur(ms) {
+    if (ms == null) return '--';
+    const s = Math.floor(ms / 1000);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    if (h) return h + 'h ' + m + 'm';
+    if (m) return m + 'm ' + (s % 60) + 's';
+    return s + 's';
+}
+
+function toLocalInput(ms) {
+    const d = new Date(ms);
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0, 16);
+}
+
+function openHistory() {
+    const sel = document.getElementById('histDevice');
+    const prev = histState.device || localStorage.getItem('gt_hist_dev') || '';
+    sel.innerHTML = devicesCache.length
+        ? devicesCache.map(d => `<option value="${esc(d.device_id)}" ${d.device_id === prev ? 'selected' : ''}>${esc(d.name)}</option>`).join('')
+        : '<option value="">Wala pang devices</option>';
+    if (!histState.from) {
+        document.getElementById('histFrom').value = toLocalInput(Date.now() - 24 * 3600 * 1000);
+        document.getElementById('histTo').value = toLocalInput(Date.now());
+    }
+    document.getElementById('historyModal').style.display = 'flex';
+}
+
+function closeHistory() {
+    pauseHist();
+    if (histState.marker) { map.removeLayer(histState.marker); histState.marker = null; }
+    if (histState.trail) { map.removeLayer(histState.trail); histState.trail = null; }
+    if (histState.fullLine) { map.removeLayer(histState.fullLine); histState.fullLine = null; }
+    document.getElementById('historyModal').style.display = 'none';
+}
+
+async function loadHistory() {
+    const device = document.getElementById('histDevice').value;
+    if (!device) { toast('Wala pang devices.', 'error'); return; }
+    const from = new Date(document.getElementById('histFrom').value).getTime();
+    const to = new Date(document.getElementById('histTo').value).getTime();
+    if (isNaN(from) || isNaN(to)) { toast('Pumili ng petsa/oras.', 'error'); return; }
+
+    histState.device = device;
+    histState.from = from;
+    histState.to = to;
+    localStorage.setItem('gt_hist_dev', device);
+
+    const summaryEl = document.getElementById('histSummary');
+    summaryEl.innerHTML = '<span class="chip">Loading...</span>';
+    try {
+        const res = await fetch(`/api/history?device_id=${encodeURIComponent(device)}&from=${from}&to=${to}`);
+        const j = await res.json();
+        if (!res.ok) throw new Error(j.error || res.status);
+
+        pauseHist();
+        if (histState.marker) map.removeLayer(histState.marker);
+        if (histState.trail) map.removeLayer(histState.trail);
+        if (histState.fullLine) map.removeLayer(histState.fullLine);
+        histState.points = j.points || [];
+        histState.trips = j.trips || [];
+        histState.idx = 0;
+
+        if (!histState.points.length) {
+            summaryEl.innerHTML = '<span class="chip">❌ Walang nahanap na data sa range na ito</span>';
+            document.getElementById('histPlayer').style.display = 'none';
+            document.getElementById('histTrips').innerHTML = '';
+            return;
+        }
+
+        const latlngs = histState.points.map(p => [p.lat, p.lng]);
+        histState.fullLine = L.polyline(latlngs, { color: '#3498db', weight: 3, opacity: 0.3, dashArray: '4 6' }).addTo(map);
+        histState.trail = L.polyline([], { color: '#3498db', weight: 5, opacity: 0.9 }).addTo(map);
+        histState.marker = L.marker(latlngs[0], {
+            icon: L.divIcon({ html: '<div class="histDot"></div>', className: '' }),
+            zIndexOffset: 1000
+        }).addTo(map);
+        map.fitBounds(L.latLngBounds(latlngs).pad(0.2));
+
+        const s = j.summary;
+        summaryEl.innerHTML =
+            `<span class="chip">📏 ${fmtDist(s.distance_m)}</span>` +
+            `<span class="chip">⏱ ${fmtDur(s.duration_ms)}</span>` +
+            `<span class="chip">⚡ max ${s.max_speed_kmh} km/h</span>` +
+            `<span class="chip">📈 avg ${s.avg_speed_kmh} km/h</span>` +
+            `<span class="chip">📍 ${s.points} pts</span>` +
+            `<span class="chip">🚗 ${histState.trips.length} trip(s)</span>`;
+
+        const slider = document.getElementById('histSlider');
+        slider.max = histState.points.length - 1;
+        slider.value = 0;
+        document.getElementById('histPlayer').style.display = 'block';
+        renderTrips();
+        histRender();
+    } catch (e) {
+        summaryEl.innerHTML = `<span class="chip">❌ Error: ${esc(String(e.message || e))}</span>`;
+    }
+}
+
+function histRender() {
+    const p = histState.points[histState.idx];
+    if (!p) return;
+    const ll = [p.lat, p.lng];
+    histState.marker.setLatLng(ll);
+    histState.trail.setLatLngs(histState.points.slice(0, histState.idx + 1).map(q => [q.lat, q.lng]));
+    document.getElementById('histSlider').value = histState.idx;
+    const spd = p.speed != null ? (p.speed * 3.6).toFixed(0) + ' km/h' : '--';
+    const acc = p.accuracy != null ? '±' + Math.round(p.accuracy) + 'm' : '';
+    document.getElementById('histInfo').textContent =
+        `${new Date(p.ts).toLocaleString()} · ${spd} ${acc} · ${histState.idx + 1}/${histState.points.length}`;
+}
+
+function playHist() {
+    if (histState.playing || histState.points.length < 2) return;
+    histState.playing = true;
+    document.getElementById('histPlay').textContent = '⏸';
+    const mult = parseInt(document.getElementById('histSpeed').value) || 1;
+    histState.timer = setInterval(() => {
+        histState.idx += mult;
+        if (histState.idx >= histState.points.length - 1) {
+            histState.idx = histState.points.length - 1;
+            histRender();
+            pauseHist();
+            return;
+        }
+        histRender();
+    }, 300);
+}
+
+function pauseHist() {
+    histState.playing = false;
+    if (histState.timer) { clearInterval(histState.timer); histState.timer = null; }
+    document.getElementById('histPlay').textContent = '▶';
+}
+
+function histSeek(ts) {
+    const i = histState.points.findIndex(p => p.ts >= ts);
+    histState.idx = i < 0 ? histState.points.length - 1 : i;
+    pauseHist();
+    histRender();
+    const p = histState.points[histState.idx];
+    if (p) map.setView([p.lat, p.lng], Math.max(map.getZoom(), 16));
+}
+
+function renderTrips() {
+    const el = document.getElementById('histTrips');
+    if (!histState.trips.length) { el.innerHTML = ''; return; }
+    let html = '<table class="tripsTbl"><tr><th>#</th><th>Start</th><th>Duration</th><th>Distance</th><th>Max speed</th></tr>';
+    html += histState.trips.map((t, i) =>
+        `<tr class="tripRow" data-ts="${t.start_ts}"><td>${i + 1}</td>` +
+        `<td>${new Date(t.start_ts).toLocaleString()}</td>` +
+        `<td>${fmtDur(t.duration_ms)}</td>` +
+        `<td>${fmtDist(t.distance_m)}</td>` +
+        `<td>${t.max_speed_kmh} km/h</td></tr>`
+    ).join('');
+    el.innerHTML = html + '</table>';
+}
+
+historyBtn.addEventListener('click', openHistory);
+document.getElementById('histClose').addEventListener('click', closeHistory);
+document.getElementById('histLoad').addEventListener('click', loadHistory);
+document.getElementById('histPlay').addEventListener('click', () => histState.playing ? pauseHist() : playHist());
+document.getElementById('histStart').addEventListener('click', () => { pauseHist(); histState.idx = 0; histRender(); });
+document.getElementById('histEnd').addEventListener('click', () => { pauseHist(); histState.idx = histState.points.length - 1; histRender(); });
+document.getElementById('histSlider').addEventListener('input', e => { pauseHist(); histState.idx = parseInt(e.target.value); histRender(); });
+document.getElementById('histSpeed').addEventListener('change', () => { if (histState.playing) { pauseHist(); playHist(); } });
+document.getElementById('histTrips').addEventListener('click', e => {
+    const row = e.target.closest('.tripRow');
+    if (row) histSeek(parseInt(row.dataset.ts));
+});
+document.getElementById('histExportGpx').addEventListener('click', () => exportHistory('gpx'));
+document.getElementById('histExportCsv').addEventListener('click', () => exportHistory('csv'));
+
+function exportHistory(fmt) {
+    if (!histState.device || !histState.points.length) { toast('I-load muna ang history.', 'error'); return; }
+    const url = `/api/export?device_id=${encodeURIComponent(histState.device)}&from=${histState.from}&to=${histState.to}&format=${fmt}`;
+    window.open(url, '_blank');
+}
 
 // ---------------------------------------------------------------------------
 // Boot

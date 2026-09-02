@@ -50,6 +50,7 @@
         <div id="controls">
             <button id="refreshBtn">Refresh Now</button>
             <button id="centerBtn">Center on All</button>
+            <button id="historyBtn" title="Replay past routes and reports">🕘 History</button>
             <button id="fenceBtn" title="Add a geofence zone">➕ Geofence</button>
             <button id="settingsBtn" title="Alert settings">⚙️ Settings</button>
             <a id="simLink" href="simulate.html" target="_blank" title="Open the test simulator">🧪 Simulator</a>
@@ -58,13 +59,15 @@
 
     <div id="toasts"></div>
 
-    <div id="settingsModal">
-        <div id="settingsCard">
+    <div id="settingsModal" class="modal">
+        <div id="settingsCard" class="modalCard">
             <h2>⚙️ Alert Settings</h2>
             <label>Speed limit (km/h) — 0 = off</label>
             <input type="number" id="setSpeed" min="0" max="300" placeholder="0">
             <label>Offline alert after (minutes)</label>
             <input type="number" id="setOffline" min="1" max="1440" placeholder="5">
+            <label>History retention (days)</label>
+            <input type="number" id="setHistoryDays" min="1" max="365" placeholder="30">
             <label class="chk"><input type="checkbox" id="setSound"> Sound alerts (kasama ang SOS siren)</label>
             <label class="chk"><input type="checkbox" id="setNotif"> Browser notifications</label>
             <div class="permrow">
@@ -74,6 +77,40 @@
             <div class="btnrow">
                 <button id="settingsClose" class="ghost">Cancel</button>
                 <button id="settingsSave">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="historyModal" class="modal">
+        <div id="historyCard" class="modalCard wide">
+            <h2>🕘 History &amp; Reports</h2>
+            <div class="histControls">
+                <select id="histDevice"></select>
+                <input type="datetime-local" id="histFrom">
+                <input type="datetime-local" id="histTo">
+                <button id="histLoad">Load</button>
+            </div>
+            <div id="histSummary" class="histSummary"></div>
+            <div id="histPlayer">
+                <div class="histPlayRow">
+                    <button id="histStart" class="ghost sm" title="Start">⏮</button>
+                    <button id="histPlay" title="Play/Pause">▶</button>
+                    <button id="histEnd" class="ghost sm" title="End">⏭</button>
+                    <select id="histSpeed" title="Playback speed">
+                        <option value="1">1x</option>
+                        <option value="2">2x</option>
+                        <option value="5" selected>5x</option>
+                        <option value="10">10x</option>
+                    </select>
+                    <span id="histInfo"></span>
+                </div>
+                <input type="range" id="histSlider" min="0" max="0" value="0">
+            </div>
+            <div id="histTrips"></div>
+            <div class="btnrow">
+                <button id="histExportGpx" class="ghost">⬇ GPX</button>
+                <button id="histExportCsv" class="ghost">⬇ CSV</button>
+                <button id="histClose">Close</button>
             </div>
         </div>
     </div>
